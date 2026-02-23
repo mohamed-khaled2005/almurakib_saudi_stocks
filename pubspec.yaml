@@ -1,0 +1,63 @@
+name: saudi_stock_monitor
+description: تطبيق مراقب الأسهم السعودية - تطبيق احترافي لمتابعة مؤشر السوق السعودي (تاسي) وأسعار الأسهم والمفضلة
+
+publish_to: 'none'
+
+version: 5.0.11+13
+
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  firebase_core: ^4.3.0
+  firebase_analytics: ^12.1.0
+  onesignal_flutter: ^5.1.2
+  flutter_svg: ^2.0.0
+  flutter:
+    sdk: flutter
+
+  flutter_localizations:
+    sdk: flutter
+
+  provider: ^6.1.1
+  http: ^1.1.2
+  shared_preferences: ^2.2.2
+  url_launcher: ^6.2.3
+  intl: ^0.20.2
+  cupertino_icons: ^1.0.6
+  fl_chart: ^0.68.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^3.0.1
+  flutter_launcher_icons: ^0.13.1
+  change_app_package_name: ^1.1.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/icon.png
+    - assets/images/logo.png
+
+  fonts:
+    - family: Tajawal
+      fonts:
+        - asset: assets/fonts/Tajawal-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Tajawal-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Tajawal-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Tajawal-ExtraBold.ttf
+          weight: 900
+
+# ✅ Launcher Icon (Legacy فقط بدون Adaptive)
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true

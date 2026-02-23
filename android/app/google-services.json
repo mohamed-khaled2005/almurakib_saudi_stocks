@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "809992298112",
+    "project_id": "saudi-stock-monitor",
+    "storage_bucket": "saudi-stock-monitor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:809992298112:android:a1eec6618a873720389065",
+        "android_client_info": {
+          "package_name": "com.almurakib.saudiappstocks"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCGj2Ee16YwAshDfELxR59wq-WGgxXH_FI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
