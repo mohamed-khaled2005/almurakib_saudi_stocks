@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +38,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
   bool _refreshing = false;
   late final List<Widget> _pages;
   List<StockModel>? _quickSearchStocksCache;
+  bool get _showOurAppsTab => defaultTargetPlatform != TargetPlatform.iOS;
 
   // ✅ Key لزر الريفريش عشان الـ Spotlight
   final GlobalKey _refreshHintKey = GlobalKey();
@@ -58,7 +60,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       HomeScreen(onNavigateToTab: (index) => setState(() => _index = index)),
       const MarketTodayScreen(),
       const AllStocksScreen(),
-      const OurAppsScreen(),
+      if (_showOurAppsTab) const OurAppsScreen(),
       const AboutScreen(),
       const ContactScreen(),
     ];
@@ -272,6 +274,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       bottomNavigationBar: _BottomNav(
         index: _index,
         onTap: _setIndex,
+        showOurAppsTab: _showOurAppsTab,
       ),
     );
   }
@@ -835,8 +838,13 @@ class _HeaderRefreshButton extends StatelessWidget {
 class _BottomNav extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
+  final bool showOurAppsTab;
 
-  const _BottomNav({required this.index, required this.onTap});
+  const _BottomNav({
+    required this.index,
+    required this.onTap,
+    required this.showOurAppsTab,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -862,6 +870,12 @@ class _BottomNav extends StatelessWidget {
           selectedIcon: Icons.info_rounded,
           label: 'عنا'),
     ];
+    final visibleItems = showOurAppsTab
+        ? items
+        : <_NavItemData>[items[0], items[1], items[2], items[4]];
+    final aboutIndex = showOurAppsTab ? 4 : 3;
+    final contactIndex = showOurAppsTab ? 5 : 4;
+    final aboutNavIndex = visibleItems.length - 1;
 
     return Container(
       decoration: BoxDecoration(
@@ -882,14 +896,20 @@ class _BottomNav extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             children: [
-              for (int i = 0; i < items.length; i++)
+              for (int i = 0; i < visibleItems.length; i++)
                 Expanded(
                   child: _BottomNavItem(
-                    data: items[i],
-                    selected: i == 4 ? (index == 4 || index == 5) : index == i,
+                    data: visibleItems[i],
+                    selected: i == aboutNavIndex
+                        ? (index == aboutIndex || index == contactIndex)
+                        : index == i,
                     onTap: () {
-                      if (i == 4) {
-                        _openAboutMenu(context);
+                      if (i == aboutNavIndex) {
+                        _openAboutMenu(
+                          context,
+                          aboutIndex: aboutIndex,
+                          contactIndex: contactIndex,
+                        );
                         return;
                       }
                       onTap(i);
@@ -903,7 +923,11 @@ class _BottomNav extends StatelessWidget {
     );
   }
 
-  void _openAboutMenu(BuildContext context) {
+  void _openAboutMenu(
+    BuildContext context, {
+    required int aboutIndex,
+    required int contactIndex,
+  }) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -943,7 +967,7 @@ class _BottomNav extends StatelessWidget {
                     icon: Icons.info_outline_rounded,
                     onTap: () {
                       Navigator.pop(ctx);
-                      onTap(4);
+                      onTap(aboutIndex);
                     },
                   ),
                   Divider(
@@ -956,7 +980,7 @@ class _BottomNav extends StatelessWidget {
                     icon: Icons.support_agent_rounded,
                     onTap: () {
                       Navigator.pop(ctx);
-                      onTap(5);
+                      onTap(contactIndex);
                     },
                   ),
                   const SizedBox(height: 8),

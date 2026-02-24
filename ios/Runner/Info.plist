@@ -30,6 +30,10 @@
 	<string>Main</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>The app may access your location to determine your country for analytics purposes and improve user experience.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>The app may access your location to determine your country for analytics purposes and improve user experience.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>The app may access your location to determine your country for analytics purposes and improve user experience.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
