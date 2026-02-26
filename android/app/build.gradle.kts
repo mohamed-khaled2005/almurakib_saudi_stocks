@@ -35,7 +35,7 @@ android {
         applicationId = "com.almurakib.saudiappstocks"
 
         // ✅ مهم: Firebase Analytics يحتاج minSdk 23
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
 
         // ✅ كما هو
         targetSdk = flutter.targetSdkVersion

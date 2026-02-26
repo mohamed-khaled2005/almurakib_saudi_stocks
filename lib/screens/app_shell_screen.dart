@@ -479,6 +479,21 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
     setState(() {});
   }
 
+  void _dismissKeyboardIfTappedOutside(PointerDownEvent event) {
+    if (!_focusNode.hasFocus) return;
+
+    final ctx = _focusNode.context;
+    if (ctx != null) {
+      final render = ctx.findRenderObject();
+      if (render is RenderBox && render.hasSize) {
+        final local = render.globalToLocal(event.position);
+        if (render.size.contains(local)) return;
+      }
+    }
+
+    _focusNode.unfocus();
+  }
+
   Future<void> _loadStocks({bool forceRefresh = false}) async {
     setState(() {
       _loading = true;
@@ -555,128 +570,134 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final hasText = _controller.text.trim().isNotEmpty;
 
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          height: MediaQuery.of(context).size.height * 0.78,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Column(
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.border,
-                    borderRadius: BorderRadius.circular(100),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _dismissKeyboardIfTappedOutside,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SafeArea(
+          top: false,
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.78,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'بحث سريع عن سهم',
-                        style: AppTextStyles.headingSmall.copyWith(
-                          fontWeight: FontWeight.w900,
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'بحث سريع عن سهم',
+                          style: AppTextStyles.headingSmall.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                        splashRadius: 20,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F6F9),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _o(Colors.black, 0.06)),
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      textInputAction: TextInputAction.search,
+                      onTapOutside: (_) => _focusNode.unfocus(),
+                      onSubmitted: (_) => _focusNode.unfocus(),
+                      style: const TextStyle(
+                        fontFamily: 'Tajawal',
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث بالاسم أو الرمز أو الرقم...',
+                        hintStyle: TextStyle(
+                          fontFamily: 'Tajawal',
+                          color: AppColors.textSecondary.withOpacity(0.7),
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search_rounded,
+                          color: AppColors.textSecondary,
+                        ),
+                        suffixIcon: hasText
+                            ? IconButton(
+                                onPressed: _controller.clear,
+                                icon: const Icon(Icons.clear_rounded, size: 18),
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
                         ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                      splashRadius: 20,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF4F6F9),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _o(Colors.black, 0.06)),
                   ),
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    textInputAction: TextInputAction.search,
-                    style: const TextStyle(
-                      fontFamily: 'Tajawal',
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(height: 10),
+                  if (_loading)
+                    const Expanded(
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                    )
+                  else if (_error != null)
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.cloud_off_rounded,
+                              size: 34,
+                              color: AppColors.error,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _error!,
+                              style: AppTextStyles.bodyMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: () => _loadStocks(forceRefresh: true),
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('إعادة المحاولة'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    _QuickSearchResults(
+                      stocks: _results(),
+                      onSelect: (stock) => Navigator.pop(context, stock),
                     ),
-                    decoration: InputDecoration(
-                      hintText: 'ابحث بالاسم أو الرمز أو الرقم...',
-                      hintStyle: TextStyle(
-                        fontFamily: 'Tajawal',
-                        color: AppColors.textSecondary.withOpacity(0.7),
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.search_rounded,
-                        color: AppColors.textSecondary,
-                      ),
-                      suffixIcon: hasText
-                          ? IconButton(
-                              onPressed: _controller.clear,
-                              icon: const Icon(Icons.clear_rounded, size: 18),
-                            )
-                          : null,
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (_loading)
-                  const Expanded(
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primaryBlue,
-                      ),
-                    ),
-                  )
-                else if (_error != null)
-                  Expanded(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.cloud_off_rounded,
-                            size: 34,
-                            color: AppColors.error,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _error!,
-                            style: AppTextStyles.bodyMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            onPressed: () => _loadStocks(forceRefresh: true),
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('إعادة المحاولة'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  _QuickSearchResults(
-                    stocks: _results(),
-                    onSelect: (stock) => Navigator.pop(context, stock),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -713,6 +734,7 @@ class _QuickSearchResults extends StatelessWidget {
 
     return Expanded(
       child: ListView.separated(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         itemCount: stocks.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (_, i) {

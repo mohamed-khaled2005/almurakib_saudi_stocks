@@ -3,7 +3,7 @@ description: تطبيق مراقب الأسهم السعودية - تطبيق ا
 
 publish_to: 'none'
 
-version: 5.0.13+15
+version: 5.0.14+16
 
 environment:
   sdk: '>=2.18.0 <4.0.0'

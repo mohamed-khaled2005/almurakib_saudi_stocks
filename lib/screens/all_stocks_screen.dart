@@ -57,6 +57,7 @@ class _AllStocksScreenState extends State<AllStocksScreen> {
   static const int _perPage = 500;
 
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   StockSortType _sortType = StockSortType.nameAsc;
   StockFilterType _filterType = StockFilterType.all;
 
@@ -79,7 +80,23 @@ class _AllStocksScreenState extends State<AllStocksScreen> {
 
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _dismissSearchKeyboardIfTappedOutside(PointerDownEvent event) {
+    if (!_searchFocusNode.hasFocus) return;
+
+    final ctx = _searchFocusNode.context;
+    if (ctx != null) {
+      final render = ctx.findRenderObject();
+      if (render is RenderBox && render.hasSize) {
+        final local = render.globalToLocal(event.position);
+        if (render.size.contains(local)) return;
+      }
+    }
+
+    _searchFocusNode.unfocus();
   }
 
   // --- Pagination Logic ---
@@ -324,8 +341,9 @@ class _AllStocksScreenState extends State<AllStocksScreen> {
   // --- UI ---
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _dismissSearchKeyboardIfTappedOutside,
       child: Scaffold(
         backgroundColor: const Color(0xFFF8F9FC),
         body: SafeArea(
@@ -402,6 +420,7 @@ class _AllStocksScreenState extends State<AllStocksScreen> {
                 const SizedBox(height: 8),
                 _SearchField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode,
                   onClear: () {
                     _searchController.clear();
                     FocusScope.of(context).unfocus();
@@ -524,6 +543,7 @@ class _AllStocksScreenState extends State<AllStocksScreen> {
       child: ListView.separated(
         controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
@@ -685,10 +705,12 @@ class _CircleIconButton extends StatelessWidget {
 
 class _SearchField extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final VoidCallback onClear;
 
   const _SearchField({
     required this.controller,
+    required this.focusNode,
     required this.onClear,
   });
 
@@ -706,7 +728,11 @@ class _SearchField extends StatelessWidget {
           final hasText = value.text.trim().isNotEmpty;
           return TextField(
             controller: controller,
+            focusNode: focusNode,
+            textInputAction: TextInputAction.search,
             textAlignVertical: TextAlignVertical.center,
+            onTapOutside: (_) => focusNode.unfocus(),
+            onSubmitted: (_) => focusNode.unfocus(),
             style: const TextStyle(
               fontFamily: 'Tajawal',
               fontWeight: FontWeight.bold,

@@ -138,10 +138,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'مراقب الأسهم السعودية',
       debugShowCheckedModeBanner: false,
-
-      navigatorObservers:
-          _firebaseReady ? <NavigatorObserver>[_observer] : const <NavigatorObserver>[],
-
+      navigatorObservers: _firebaseReady
+          ? <NavigatorObserver>[_observer]
+          : const <NavigatorObserver>[],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -152,7 +151,6 @@ class MyApp extends StatelessWidget {
         Locale('en', 'US'),
       ],
       locale: const Locale('ar', 'SA'),
-
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'Tajawal',
@@ -170,15 +168,49 @@ class MyApp extends StatelessWidget {
           systemOverlayStyle: SystemUiOverlayStyle.dark,
         ),
       ),
-
       builder: (context, child) {
-        return Directionality(
-          textDirection: TextDirection.rtl,
-          child: child!,
+        final content = child ?? const SizedBox.shrink();
+        return _GlobalKeyboardDismiss(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: content,
+          ),
         );
       },
-
       home: const AppInitializer(),
+    );
+  }
+}
+
+class _GlobalKeyboardDismiss extends StatelessWidget {
+  final Widget child;
+
+  const _GlobalKeyboardDismiss({required this.child});
+
+  bool _isTapInsideFocusedNode(PointerDownEvent event, FocusNode focusNode) {
+    final ctx = focusNode.context;
+    if (ctx == null) return false;
+
+    final render = ctx.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) return false;
+
+    final local = render.globalToLocal(event.position);
+    return render.size.contains(local);
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    final focusedNode = FocusManager.instance.primaryFocus;
+    if (focusedNode == null || !focusedNode.hasFocus) return;
+    if (_isTapInsideFocusedNode(event, focusedNode)) return;
+    focusedNode.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handlePointerDown,
+      child: child,
     );
   }
 }
@@ -209,7 +241,9 @@ class _AppInitializerState extends State<AppInitializer> {
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) {
-          return onboardingCompleted ? const AppShellScreen() : const OnboardingScreen();
+          return onboardingCompleted
+              ? const AppShellScreen()
+              : const OnboardingScreen();
         },
         transitionDuration: const Duration(milliseconds: 400),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
