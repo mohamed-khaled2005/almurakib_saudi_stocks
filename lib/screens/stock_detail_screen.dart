@@ -15,6 +15,7 @@ import '../core/utils/constants.dart';
 
 import '../animations/fade_animation.dart';
 import '../animations/slide_animation.dart';
+import '../screens/stock_indicators_screen.dart';
 import '../widgets/technical_indicators_widget.dart';
 import '../widgets/stock_performance_tab.dart';
 import '../widgets/last_update_banner.dart';
@@ -102,13 +103,14 @@ class _StockDetailScreenState extends State<StockDetailScreen>
   static final Map<String, List<_Candle>> _yearCache = {};
   static final Map<String, DateTime> _yearCacheAt = {};
   static const Duration _cacheTtl = Duration(hours: 6);
+  static const int _dedicatedIndicatorsThreshold = 8;
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ 3 Tabs الآن: تحليل الأداء + أداء السهم + المؤشرات الفنية
-    _tabController = TabController(length: 3, vsync: this);
+    // ✅ المؤشرات تُعرض بشكل ذكي داخل الصفحة أو في صفحة مستقلة حسب كثافة البيانات
+    _tabController = TabController(length: 2, vsync: this);
 
     _stock = widget.stock;
 
@@ -119,6 +121,13 @@ class _StockDetailScreenState extends State<StockDetailScreen>
   }
 
   StockModel get _safeStock => _stock ?? widget.stock;
+
+  bool get _hasIndicators =>
+      _indicators != null && _indicators!.indicators.isNotEmpty;
+
+  bool get _useDedicatedIndicatorsPage =>
+      _hasIndicators &&
+      _indicators!.indicators.length >= _dedicatedIndicatorsThreshold;
 
   String _symbolForHistory(String s) {
     var out = s.trim();
@@ -604,6 +613,29 @@ class _StockDetailScreenState extends State<StockDetailScreen>
           ],
         ),
         actions: [
+          if (_useDedicatedIndicatorsPage)
+            IconButton(
+              tooltip: 'المؤشرات الفنية',
+              onPressed: _openIndicatorsScreen,
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.analytics_rounded,
+                  color: AppColors.primaryBlue,
+                  size: 22,
+                ),
+              ),
+            ),
           IconButton(
             onPressed: _toggleFavorite,
             icon: AnimatedSwitcher(
@@ -662,7 +694,6 @@ class _StockDetailScreenState extends State<StockDetailScreen>
               children: [
                 _buildChartTab(changeColor),
                 StockPerformanceTab(stock: stock),
-                _buildIndicatorsTab(),
               ],
             ),
           ),
@@ -796,7 +827,6 @@ class _StockDetailScreenState extends State<StockDetailScreen>
         tabs: const [
           Tab(child: _TabLabel('تحليل الأداء')),
           Tab(child: _TabLabel('أداء السهم')),
-          Tab(child: _TabLabel('المؤشرات الفنية')),
         ],
       ),
     );
@@ -889,6 +919,10 @@ class _StockDetailScreenState extends State<StockDetailScreen>
             ),
           ),
         ),
+        if (_loadingIndicators || _hasIndicators) ...[
+          const SizedBox(height: 28),
+          _buildIndicatorsSection(),
+        ],
       ],
     );
   }
@@ -1367,26 +1401,242 @@ class _StockDetailScreenState extends State<StockDetailScreen>
     );
   }
 
-  /// ✅ بعد التعديل: تم حذف كارت التحذير بالكامل من آخر التاب
-  Widget _buildIndicatorsTab() {
-    return ListView(
+  Widget _buildIndicatorsSection() {
+    if (_loadingIndicators) {
+      return _buildIndicatorsLoadingCard();
+    }
+
+    if (!_hasIndicators) {
+      return const SizedBox.shrink();
+    }
+
+    if (_useDedicatedIndicatorsPage) {
+      return FadeAnimation(child: _buildDedicatedIndicatorsCard());
+    }
+
+    return FadeAnimation(
+      child: TechnicalIndicatorsWidget(indicators: _indicators!),
+    );
+  }
+
+  Widget _buildIndicatorsLoadingCard() {
+    return Container(
       padding: const EdgeInsets.all(20),
-      physics: const BouncingScrollPhysics(),
-      children: [
-        if (_loadingIndicators)
-          const Padding(
-            padding: EdgeInsets.all(40),
-            child: Center(
-                child: CircularProgressIndicator(color: AppColors.primaryBlue)),
-          )
-        else if (_indicators != null)
-          FadeAnimation(
-              child: TechnicalIndicatorsWidget(indicators: _indicators!))
-        else
-          const Center(
-              child: Text("لا توجد مؤشرات متاحة حالياً",
-                  style: AppTextStyles.bodySmall)),
-      ],
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              color: AppColors.primaryBlue,
+              strokeWidth: 2.5,
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'جارِ تحميل المؤشرات الفنية...',
+              style: AppTextStyles.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDedicatedIndicatorsCard() {
+    final indicators = _indicators!;
+    final summaryColor = _indicatorSummaryColor(indicators.overallSummary);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildUnifiedTitle(title: 'المؤشرات الفنية'),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primaryBlue.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: summaryColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.analytics_rounded,
+                    color: summaryColor,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${indicators.indicators.length} مؤشر متاح لهذا السهم',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'تم فصل المؤشرات في صفحة مستقلة لعرض أوضح وأسرع.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _buildIndicatorStatChip(
+                label: 'الملخص',
+                value: _indicatorSummaryLabel(indicators.overallSummary),
+                color: summaryColor,
+              ),
+              _buildIndicatorStatChip(
+                label: 'شراء',
+                value: indicators.totalBuy.toString(),
+                color: AppColors.gain,
+              ),
+              _buildIndicatorStatChip(
+                label: 'بيع',
+                value: indicators.totalSell.toString(),
+                color: AppColors.loss,
+              ),
+              _buildIndicatorStatChip(
+                label: 'محايد',
+                value: indicators.totalNeutral.toString(),
+                color: Colors.grey,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _openIndicatorsScreen,
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('فتح صفحة المؤشرات الفنية'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIndicatorStatChip({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: color,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _indicatorSummaryLabel(String summary) {
+    final s = summary.toLowerCase().trim();
+    if (s.contains('strong buy')) return 'شراء قوي';
+    if (s == 'buy') return 'شراء';
+    if (s.contains('strong sell')) return 'بيع قوي';
+    if (s == 'sell') return 'بيع';
+    return 'محايد';
+  }
+
+  Color _indicatorSummaryColor(String summary) {
+    final s = summary.toLowerCase().trim();
+    if (s.contains('buy')) return AppColors.gain;
+    if (s.contains('sell')) return AppColors.loss;
+    return Colors.grey;
+  }
+
+  void _openIndicatorsScreen() {
+    if (!_hasIndicators) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => StockIndicatorsScreen(
+          stock: _safeStock,
+          initialIndicators: _indicators!,
+        ),
+      ),
     );
   }
 

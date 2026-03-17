@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/utils/constants.dart';
 import '../animations/scale_animation.dart';
-
-Color _a(Color c, double opacity) =>
-    c.withAlpha((opacity.clamp(0.0, 1.0) * 255).round());
+import '../core/utils/constants.dart';
+import '../providers/app_manager_provider.dart';
+import 'app_shell_screen.dart';
+import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -15,103 +19,145 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
+  static const String _prefsKeyOnboarding = 'onboarding_completed';
+
   late final AnimationController _controller;
-  late final Animation<double> _fade;
-  late final Animation<Offset> _slide;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
 
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 1400),
       vsync: this,
     );
 
-    _fade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.15, 1.0)),
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.25, 1.0, curve: Curves.easeIn),
+      ),
     );
 
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.25),
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.35),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
 
     _controller.forward();
+    _startSplashFlow();
+  }
+
+  Future<void> _startSplashFlow() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
+
+    final manager = context.read<AppManagerProvider>();
+    unawaited(manager.initialize());
+
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingCompleted = prefs.getBool(_prefsKeyOnboarding) ?? false;
+
+    if (!mounted) return;
+
+    final nextScreen =
+        onboardingCompleted ? const AppShellScreen() : const OnboardingScreen();
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        transitionDuration: AppAnimations.pageTransition,
+        pageBuilder: (_, animation, __) => FadeTransition(
+          opacity: animation,
+          child: nextScreen,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final bg = Theme.of(context).scaffoldBackgroundColor;
-
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppColors.background,
       body: Container(
-        width: double.infinity,
-        height: double.infinity,
         decoration: BoxDecoration(
           gradient: RadialGradient(
-            radius: 1.6,
+            center: Alignment.center,
+            radius: 1.45,
             colors: [
-              _a(cs.primary, 0.10),
-              bg,
+              AppColors.primaryGold.withValues(alpha: 0.12),
+              AppColors.background,
             ],
           ),
         ),
         child: Center(
-          child: FadeTransition(
-            opacity: _fade,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ScaleAnimation(
-                  child: SizedBox(
-                    width: 122,
-                    height: 122,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ScaleAnimation(
+                child: Container(
+                  width: 136,
+                  height: 136,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryGold.withValues(alpha: 0.35),
+                        blurRadius: 24,
+                        spreadRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(22),
                     child: Image.asset(
-                      'assets/images/icon.png',
+                      'assets/images/stock_app_icon.png',
                       fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, __, ___) {
-                        return Container(
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: _a(cs.primary, 0.08),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.assessment_rounded,
-                            size: 58,
-                            color: cs.primary,
-                          ),
-                        );
-                      },
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                SlideTransition(
-                  position: _slide,
+              ),
+              const SizedBox(height: 32),
+              SlideTransition(
+                position: _slideAnimation,
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
                   child: Text(
                     'مراقب الأسهم السعودية',
-                    style: AppTextStyles.headingSmall.copyWith(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w900,
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primaryGold,
+                      fontFamily: 'Tajawal',
+                      shadows: [
+                        Shadow(
+                          blurRadius: 9,
+                          color: AppColors.primaryGold.withValues(alpha: 0.35),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: 32,
-                  height: 32,
+              ),
+              const SizedBox(height: 30),
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: const SizedBox(
+                  width: 36,
+                  height: 36,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
+                    strokeWidth: 2.2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.primaryGold),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

@@ -1,16 +1,26 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core_platform_interface/test.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:saudi_stock_monitor/main.dart';
 import 'package:saudi_stock_monitor/screens/splash_screen.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    setupFirebaseCoreMocks();
+    await Firebase.initializeApp();
+  });
+
   testWidgets('App launches and shows SplashScreen', (WidgetTester tester) async {
-    // Build the app
     await tester.pumpWidget(const MyApp());
 
-    // Let first frame render
     await tester.pump();
 
-    // Verify SplashScreen is shown
     expect(find.byType(SplashScreen), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1900));
   });
 }

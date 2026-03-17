@@ -1,28 +1,34 @@
-import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/models/stock_model.dart';
-import '../core/utils/constants.dart';
+import '../core/services/favorites_service.dart';
 import '../core/services/stock_service.dart';
 import '../core/services/translation_service.dart';
-import '../core/services/favorites_service.dart';
-
-import '../core/utils/app_lifecycle_refresh.dart'; // ✅ ADD
-import '../core/utils/first_time_hint.dart'; // ✅ ADD
-
+import '../core/utils/app_lifecycle_refresh.dart';
+import '../core/utils/constants.dart';
+import '../core/utils/first_time_hint.dart';
+import '../core/utils/server_time_utils.dart';
+import '../models/manual_ad_model.dart';
+import '../providers/app_manager_provider.dart';
+import '../widgets/last_update_banner.dart';
+import '../widgets/manual_ad_banner.dart';
+import 'about_screen.dart';
+import 'account_screen.dart';
+import 'all_stocks_screen.dart';
+import 'contact_screen.dart';
+import 'educational_content_screen.dart';
 import 'home_screen.dart';
 import 'market_today_screen.dart';
-import 'all_stocks_screen.dart';
 import 'our_apps_screen.dart';
-import 'about_screen.dart';
-import 'contact_screen.dart';
 import 'stock_detail_screen.dart';
 
-Color _o(Color c, double opacity) =>
-    c.withAlpha((opacity.clamp(0.0, 1.0) * 255).round());
+const Color _headerSurfaceTop = Color(0xFFF9FFF8);
+const Color _headerSurfaceBottom = Color(0xFFE8F6E8);
+const Color _headerCard = Color(0xFFFFFFFF);
 
 class AppShellScreen extends StatefulWidget {
   const AppShellScreen({super.key});
@@ -33,54 +39,52 @@ class AppShellScreen extends StatefulWidget {
 
 class _AppShellScreenState extends State<AppShellScreen> {
   static const String _almurakibWebsiteUrl = 'https://almurakib.com/';
+  static const int _homeTabIndex = 0;
+  static const int _marketTodayTabIndex = 1;
+  static const int _allStocksTabIndex = 2;
+  static const int _educationTabIndex = 3;
 
-  int _index = 0;
+  int _index = _homeTabIndex;
   bool _refreshing = false;
   late final List<Widget> _pages;
   List<StockModel>? _quickSearchStocksCache;
   bool get _showOurAppsTab => defaultTargetPlatform != TargetPlatform.iOS;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  // ✅ Key لزر الريفريش عشان الـ Spotlight
   final GlobalKey _refreshHintKey = GlobalKey();
-
-  // ✅ Listener للـ resume
   VoidCallback? _resumeListener;
-
-  // ✅ منع تكرار hint في نفس الجلسة
   bool _hintRequested = false;
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ تأكيد تفعيل مراقبة دورة حياة التطبيق (حتى لو اتنسى في main)
     AppLifecycleSignals.ensureInitialized();
 
     _pages = <Widget>[
-      HomeScreen(onNavigateToTab: (index) => setState(() => _index = index)),
+      HomeScreen(onNavigateToTab: (index) => _setIndex(index)),
       const MarketTodayScreen(),
       const AllStocksScreen(),
+      const EducationalContentScreen(),
       if (_showOurAppsTab) const OurAppsScreen(),
       const AboutScreen(),
       const ContactScreen(),
     ];
 
-    // ✅ تحميل favorites مرة واحدة (عشان notifier يبقى جاهز لكل tabs)
     FavoritesService.init();
-
-    // ✅ تحميل الترجمات عند فتح التطبيق
     TranslationService.getTranslations(forceRefresh: true);
     _warmQuickSearchCache();
 
-    // ✅ Refresh تلقائي عند رجوع التطبيق foreground/resume
-    _resumeListener = () {
-      _refreshOnResumeSilent();
-    };
+    _resumeListener = _refreshOnResumeSilent;
     AppLifecycleSignals.resumeTick.addListener(_resumeListener!);
 
-    // ✅ Hint مرة واحدة فقط على زر التحديث
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final manager = context.read<AppManagerProvider>();
+      manager.refreshAd();
+      manager.refreshEducationalContent();
       _showRefreshHintOnce();
+      if (!mounted) return;
+      manager.trackPageView(_pageTrackingName(_index));
     });
   }
 
@@ -102,26 +106,25 @@ class _AppShellScreenState extends State<AppShellScreen> {
     FirstTimeHint.showRefreshHint(
       context: context,
       targetKey: _refreshHintKey,
-      prefsKey: 'hint_stocks_refresh_button_v1',
-      message: 'اضغط هنا لتحديث البيانات (سيظهر هذا التنبيه مرة واحدة فقط)',
+      prefsKey: 'hint_stocks_refresh_button_v2',
+      message: 'اضغط هنا لتحديث بيانات السوق',
       autoDismiss: const Duration(seconds: 10),
     );
   }
 
   Future<void> _refreshOnResumeSilent() async {
-    if (!mounted) return;
-    if (_refreshing) return;
-
+    if (!mounted || _refreshing) return;
     setState(() => _refreshing = true);
 
     try {
-      // ✅ تحديث صامت بدون SnackBar
       await TranslationService.getTranslations(forceRefresh: true);
+      await _loadQuickSearchUniverse(forceRefresh: true);
     } catch (_) {
-      // تجاهل الأخطاء في التحديث الصامت
+      // Ignore silent refresh failures.
     } finally {
-      if (!mounted) return;
-      setState(() => _refreshing = false);
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
     }
   }
 
@@ -129,11 +132,10 @@ class _AppShellScreenState extends State<AppShellScreen> {
     if (_refreshing) return;
 
     setState(() => _refreshing = true);
-
     try {
       await TranslationService.getTranslations(forceRefresh: true);
-      await Future.delayed(const Duration(milliseconds: 300));
-
+      await _loadQuickSearchUniverse(forceRefresh: true);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -142,7 +144,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
             'تم تحديث البيانات بنجاح',
             style: TextStyle(fontFamily: 'Tajawal'),
           ),
-          backgroundColor: const Color(0xFF388E3C),
+          backgroundColor: const Color(0xFF2E7D32),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -154,7 +156,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            'تعذر تحديث البيانات حالياً',
+            'تعذر تحديث البيانات حاليا',
             style: TextStyle(fontFamily: 'Tajawal'),
           ),
           backgroundColor: const Color(0xFFD32F2F),
@@ -165,8 +167,9 @@ class _AppShellScreenState extends State<AppShellScreen> {
         ),
       );
     } finally {
-      if (!mounted) return;
-      setState(() => _refreshing = false);
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
     }
   }
 
@@ -182,13 +185,16 @@ class _AppShellScreenState extends State<AppShellScreen> {
     return stocks;
   }
 
-  void _warmQuickSearchCache() async {
+  Future<void> _warmQuickSearchCache() async {
     try {
       await _loadQuickSearchUniverse();
+      if (mounted) {
+        setState(() {});
+      }
     } catch (_) {}
   }
 
-  void _onQuickSearch() async {
+  Future<void> _onQuickSearch() async {
     final selectedStock = await showModalBottomSheet<StockModel>(
       context: context,
       isScrollControlled: true,
@@ -208,39 +214,54 @@ class _AppShellScreenState extends State<AppShellScreen> {
     );
   }
 
+  Future<void> _openAccount() async {
+    if (!mounted) return;
+    await context.read<AppManagerProvider>().trackPageView('account_entry');
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AccountScreen()),
+    );
+  }
+
   Future<void> _onLogoTap() async {
     final shouldOpen = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text(
-            'فتح موقع المراقب',
-            style:
-                TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.w800),
-          ),
-          content: const Text(
-            'هل تريد زيارة موقع المراقب الآن؟',
-            style: TextStyle(fontFamily: 'Tajawal'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child:
-                  const Text('إلغاء', style: TextStyle(fontFamily: 'Tajawal')),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text(
-                'زيارة الموقع',
+          context: context,
+          builder: (ctx) {
+            return AlertDialog(
+              title: const Text(
+                'فتح موقع المراقب',
+                style: TextStyle(
+                  fontFamily: 'Tajawal',
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              content: const Text(
+                'هل تريد زيارة موقع المراقب الآن؟',
                 style: TextStyle(fontFamily: 'Tajawal'),
               ),
-            ),
-          ],
-        );
-      },
-    );
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text(
+                    'إلغاء',
+                    style: TextStyle(fontFamily: 'Tajawal'),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text(
+                    'زيارة الموقع',
+                    style: TextStyle(fontFamily: 'Tajawal'),
+                  ),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
 
-    if (shouldOpen != true || !mounted) return;
+    if (!shouldOpen || !mounted) return;
 
     final ok = await launchUrl(
       Uri.parse(_almurakibWebsiteUrl),
@@ -249,7 +270,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر فتح الموقع حالياً')),
+        const SnackBar(content: Text('تعذر فتح الموقع حاليا')),
       );
     }
   }
@@ -257,176 +278,464 @@ class _AppShellScreenState extends State<AppShellScreen> {
   void _setIndex(int i) {
     if (_index == i) return;
     setState(() => _index = i);
+    context.read<AppManagerProvider>().trackPageView(_pageTrackingName(i));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
-      appBar: _buildHeader(),
-      body: SafeArea(
-        top: false,
-        child: IndexedStack(
-          index: _index,
-          children: _pages,
-        ),
-      ),
-      bottomNavigationBar: _BottomNav(
-        index: _index,
-        onTap: _setIndex,
-        showOurAppsTab: _showOurAppsTab,
-      ),
+  String _pageTrackingName(int index) {
+    if (_showOurAppsTab) {
+      switch (index) {
+        case _homeTabIndex:
+          return 'home';
+        case _marketTodayTabIndex:
+          return 'market_today';
+        case _allStocksTabIndex:
+          return 'all_stocks';
+        case _educationTabIndex:
+          return 'education_content';
+        case 4:
+          return 'our_apps';
+        case 5:
+          return 'about';
+        case 6:
+          return 'contact';
+        default:
+          return 'unknown';
+      }
+    }
+
+    switch (index) {
+      case _homeTabIndex:
+        return 'home';
+      case _marketTodayTabIndex:
+        return 'market_today';
+      case _allStocksTabIndex:
+        return 'all_stocks';
+      case _educationTabIndex:
+        return 'education_content';
+      case 4:
+        return 'about';
+      case 5:
+        return 'contact';
+      default:
+        return 'unknown';
+    }
+  }
+
+  DateTime? _headerLastUpdateUtc() {
+    final stocks = _quickSearchStocksCache;
+    if (stocks == null || stocks.isEmpty) return null;
+    return ServerTimeUtils.pickLatest(stocks.map((stock) => stock.lastUpdateUtc));
+  }
+
+  bool _showTopUtilityBar() => _index <= _allStocksTabIndex;
+
+  void _openRightMenu() {
+    _scaffoldKey.currentState?.openDrawer();
+  }
+
+  Drawer _buildSideDrawer(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final drawerWidth = screenWidth > 380 ? 320.0 : screenWidth * 0.86;
+
+    return Drawer(
+      width: drawerWidth,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      child: _buildSideNavigationPanel(closeOnSelect: true),
     );
   }
 
-  PreferredSizeWidget _buildHeader() {
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(70),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: _o(Colors.black, 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
+  Widget _buildSideNavigationPanel({required bool closeOnSelect}) {
+    final items = _navigationItems();
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFFFFFFFF),
+            Color(0xFFF8FCF8),
+            Color(0xFFEEF8EE),
           ],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
         ),
-        child: SafeArea(
-          bottom: false,
-          child: _HeaderContent(
-            refreshing: _refreshing,
-            onRefresh: _onRefresh,
-            onQuickSearch: _onQuickSearch,
-            onLogoTap: _onLogoTap,
-            refreshHintKey: _refreshHintKey, // ✅ ADD
+        border: Border.all(color: AppColors.border, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.14),
+            blurRadius: 22,
+            spreadRadius: 1.2,
+            offset: const Offset(0, 10),
           ),
-        ),
+        ],
       ),
-    );
-  }
-}
+      child: SafeArea(
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(10, 16, 10, 18),
+          itemCount: items.length,
+          itemBuilder: (context, i) {
+            final item = items[i];
+            final isSelected = _index == item.index;
 
-class _HeaderContent extends StatelessWidget {
-  final bool refreshing;
-  final Future<void> Function() onRefresh;
-  final VoidCallback onQuickSearch;
-  final Future<void> Function() onLogoTap;
-
-  // ✅ ADD
-  final GlobalKey refreshHintKey;
-
-  const _HeaderContent({
-    required this.refreshing,
-    required this.onRefresh,
-    required this.onQuickSearch,
-    required this.onLogoTap,
-    required this.refreshHintKey,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final logoMaxW = math.min(220.0, math.max(120.0, c.maxWidth * 0.56));
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            textDirection: TextDirection.ltr,
-            children: [
-              // ✅ Wrap button with KeyedSubtree for spotlight
-              KeyedSubtree(
-                key: refreshHintKey,
-                child: _HeaderRefreshButton(
-                  loading: refreshing,
-                  onTap: refreshing ? null : () async => onRefresh(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _HeaderSearchButton(onTap: onQuickSearch),
-              const Spacer(),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: logoMaxW),
-                child: SizedBox(
-                  height: 48,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AnimatedContainer(
+                  duration: AppAnimations.buttonAnimation,
+                  decoration: BoxDecoration(
+                    gradient: isSelected
+                        ? LinearGradient(
+                            colors: [
+                              AppColors.primaryGold.withValues(alpha: 0.16),
+                              AppColors.primaryGold.withValues(alpha: 0.06),
+                            ],
+                            begin: Alignment.centerRight,
+                            end: Alignment.centerLeft,
+                          )
+                        : null,
+                    color: isSelected ? null : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primaryGold.withValues(alpha: 0.34)
+                          : AppColors.border,
+                    ),
+                  ),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => onLogoTap(),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Image.asset(
-                          'assets/images/logo.png',
-                          fit: BoxFit.contain,
-                          alignment: Alignment.centerRight,
-                          filterQuality: FilterQuality.high,
-                          errorBuilder: (_, __, ___) {
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.assessment_rounded,
-                                  color: AppColors.primaryBlue,
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'مراقب الأسهم',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: 'Tajawal',
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => _navigateToMenuItem(
+                        item.index,
+                        closeDrawer: closeOnSelect,
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsetsDirectional.fromSTEB(12, 6, 10, 6),
+                        leading: Icon(
+                          item.icon,
+                          size: 22,
+                          color: isSelected
+                              ? AppColors.primaryGold
+                              : AppColors.textSecondary,
+                        ),
+                        title: Text(
+                          item.title,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: isSelected
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+                const SizedBox(height: 6),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  List<_SideNavItem> _navigationItems() {
+    return <_SideNavItem>[
+      const _SideNavItem(
+        index: _homeTabIndex,
+        title: 'الصفحة الرئيسية',
+        icon: Icons.home_outlined,
+      ),
+      const _SideNavItem(
+        index: _marketTodayTabIndex,
+        title: 'السوق اليوم',
+        icon: Icons.trending_up_outlined,
+      ),
+      const _SideNavItem(
+        index: _allStocksTabIndex,
+        title: 'جميع الأسهم',
+        icon: Icons.list_alt_outlined,
+      ),
+      const _SideNavItem(
+        index: _educationTabIndex,
+        title: 'المحتوى التعليمي',
+        icon: Icons.menu_book_outlined,
+      ),
+      if (_showOurAppsTab)
+        const _SideNavItem(
+          index: 4,
+          title: 'تطبيقاتنا',
+          icon: Icons.apps_outlined,
+        ),
+      _SideNavItem(
+        index: _showOurAppsTab ? 5 : 4,
+        title: 'عن التطبيق',
+        icon: Icons.info_outline_rounded,
+      ),
+      _SideNavItem(
+        index: _showOurAppsTab ? 6 : 5,
+        title: 'الاتصال بنا',
+        icon: Icons.contact_page_outlined,
+      ),
+    ];
+  }
+
+  void _navigateToMenuItem(int index, {required bool closeDrawer}) {
+    if (closeDrawer && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+    _setIndex(index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAuthenticated = context.select<AppManagerProvider, bool>(
+      (manager) => manager.isAuthenticated,
+    );
+    final activeAd = context.select<AppManagerProvider, ManualAdModel?>(
+      (manager) => manager.activeAd,
+    );
+
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: const Color(0xFFF6F8F7),
+      drawer: _buildSideDrawer(context),
+      drawerEnableOpenDragGesture: false,
+      appBar: _buildHeader(isAuthenticated: isAuthenticated),
+      body: Column(
+        children: [
+          if (_showTopUtilityBar()) _buildTopUtilityBar(),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: IndexedStack(
+                index: _index,
+                children: _pages,
               ),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: ManualAdBanner(
+        stickyBottom: true,
+        ad: activeAd,
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildHeader({required bool isAuthenticated}) {
+    const showMenuButton = true;
+
+    return AppBar(
+      leading: const SizedBox.shrink(),
+      leadingWidth: 0,
+      backgroundColor: _headerCard,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      centerTitle: false,
+      automaticallyImplyLeading: false,
+      toolbarHeight: 72,
+      flexibleSpace: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_headerSurfaceTop, _headerSurfaceBottom],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+          border: Border(
+            bottom: BorderSide(
+              color: AppColors.border,
+            ),
+          ),
+        ),
+      ),
+      titleSpacing: 12,
+      title: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: _onLogoTap,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 236),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    height: 40,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              _HeaderIconButton(
+                tooltip: 'الرئيسية',
+                onTap: () => _setIndex(0),
+                icon: _index == 0 ? Icons.home_rounded : Icons.home_outlined,
+              ),
+              const SizedBox(width: 10),
+              _HeaderIconButton(
+                tooltip: isAuthenticated ? 'حسابي' : 'تسجيل الدخول',
+                onTap: _openAccount,
+                icon: isAuthenticated
+                    ? Icons.person_outline_rounded
+                    : Icons.account_circle_outlined,
+              ),
+              if (showMenuButton) ...[
+                const SizedBox(width: 10),
+                _HeaderIconButton(
+                  tooltip: 'القائمة',
+                  onTap: _openRightMenu,
+                  icon: Icons.menu_rounded,
+                ),
+              ],
             ],
           ),
-        );
-      },
+        ),
+      ),
+      actions: const [],
+    );
+  }
+
+  Widget _buildTopUtilityBar() {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_headerSurfaceBottom, _headerSurfaceTop],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.border,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: LastUpdateBanner(
+                updateUtc: _headerLastUpdateUtc(),
+                loading: _refreshing || _quickSearchStocksCache == null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            _UtilityButton(
+              onTap: _onQuickSearch,
+              icon: Icons.search_rounded,
+            ),
+            const SizedBox(width: 8),
+            KeyedSubtree(
+              key: _refreshHintKey,
+              child: _UtilityButton(
+                onTap: _refreshing ? null : _onRefresh,
+                child: _refreshing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primaryGold,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.refresh_rounded,
+                        size: 20,
+                        color: AppColors.primaryGold,
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _HeaderSearchButton extends StatelessWidget {
-  final VoidCallback? onTap;
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.tooltip,
+    required this.onTap,
+    required this.icon,
+  });
 
-  const _HeaderSearchButton({required this.onTap});
+  final String tooltip;
+  final VoidCallback onTap;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: _headerCard,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.border,
+              ),
+            ),
+            child: Icon(
+              icon,
+              color: AppColors.primaryGold,
+              size: 22,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UtilityButton extends StatelessWidget {
+  const _UtilityButton({
+    this.onTap,
+    this.icon,
+    this.child,
+  }) : assert(icon != null || child != null);
+
+  final Future<void> Function()? onTap;
+  final IconData? icon;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
+      color: _headerCard,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
+        onTap: onTap == null ? null : () => onTap!(),
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
         child: Container(
-          width: 42,
-          height: 42,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
-            color: _o(AppColors.primaryBlue, 0.10),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _o(AppColors.primaryBlue, 0.20)),
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.search_rounded,
-              size: 22,
-              color: AppColors.primaryBlue,
+            border: Border.all(
+              color: AppColors.border,
             ),
+          ),
+          child: Center(
+            child: child ??
+                Icon(
+                  icon,
+                  color: AppColors.primaryGold,
+                  size: 20,
+                ),
           ),
         ),
       ),
@@ -435,11 +744,11 @@ class _HeaderSearchButton extends StatelessWidget {
 }
 
 class _QuickSearchBottomSheet extends StatefulWidget {
-  final Future<List<StockModel>> Function({bool forceRefresh}) loadStocks;
-
   const _QuickSearchBottomSheet({
     required this.loadStocks,
   });
+
+  final Future<List<StockModel>> Function({bool forceRefresh}) loadStocks;
 
   @override
   State<_QuickSearchBottomSheet> createState() =>
@@ -449,9 +758,9 @@ class _QuickSearchBottomSheet extends StatefulWidget {
 class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final Map<String, String> _searchIndexCache = {};
+  final Map<String, String> _searchIndexCache = <String, String>{};
 
-  List<StockModel> _stocks = const [];
+  List<StockModel> _stocks = const <StockModel>[];
   bool _loading = true;
   String? _error;
 
@@ -510,7 +819,7 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'تعذر تحميل الأسهم حالياً';
+        _error = 'تعذر تحميل الأسهم حاليا';
         _loading = false;
       });
     }
@@ -620,7 +929,7 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF4F6F9),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: _o(Colors.black, 0.06)),
+                      border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
                     ),
                     child: TextField(
                       controller: _controller,
@@ -636,7 +945,7 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
                         hintText: 'ابحث بالاسم أو الرمز أو الرقم...',
                         hintStyle: TextStyle(
                           fontFamily: 'Tajawal',
-                          color: AppColors.textSecondary.withOpacity(0.7),
+                          color: AppColors.textSecondary.withValues(alpha: 0.7),
                         ),
                         prefixIcon: const Icon(
                           Icons.search_rounded,
@@ -707,13 +1016,13 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
 }
 
 class _QuickSearchResults extends StatelessWidget {
-  final List<StockModel> stocks;
-  final ValueChanged<StockModel> onSelect;
-
   const _QuickSearchResults({
     required this.stocks,
     required this.onSelect,
   });
+
+  final List<StockModel> stocks;
+  final ValueChanged<StockModel> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -754,7 +1063,7 @@ class _QuickSearchResults extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFD),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _o(Colors.black, 0.05)),
+                  border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
                 ),
                 child: Row(
                   children: [
@@ -811,323 +1120,14 @@ class _QuickSearchResults extends StatelessWidget {
   }
 }
 
-class _HeaderRefreshButton extends StatelessWidget {
-  final bool loading;
-  final VoidCallback? onTap;
-
-  const _HeaderRefreshButton({
-    required this.loading,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: _o(AppColors.primaryBlue, 0.10),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _o(AppColors.primaryBlue, 0.20)),
-          ),
-          child: Center(
-            child: loading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.primaryBlue,
-                    ),
-                  )
-                : const Icon(
-                    Icons.refresh_rounded,
-                    size: 22,
-                    color: AppColors.primaryBlue,
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomNav extends StatelessWidget {
-  final int index;
-  final ValueChanged<int> onTap;
-  final bool showOurAppsTab;
-
-  const _BottomNav({
+class _SideNavItem {
+  const _SideNavItem({
     required this.index,
-    required this.onTap,
-    required this.showOurAppsTab,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const items = [
-      _NavItemData(
-          icon: Icons.home_outlined,
-          selectedIcon: Icons.home_rounded,
-          label: 'الرئيسية'),
-      _NavItemData(
-          icon: Icons.trending_up_outlined,
-          selectedIcon: Icons.trending_up_rounded,
-          label: 'السوق'),
-      _NavItemData(
-          icon: Icons.list_alt_outlined,
-          selectedIcon: Icons.list_alt_rounded,
-          label: 'الأسهم'),
-      _NavItemData(
-          icon: Icons.apps_outlined,
-          selectedIcon: Icons.apps_rounded,
-          label: 'تطبيقاتنا'),
-      _NavItemData(
-          icon: Icons.info_outline_rounded,
-          selectedIcon: Icons.info_rounded,
-          label: 'عنا'),
-    ];
-    final visibleItems = showOurAppsTab
-        ? items
-        : <_NavItemData>[items[0], items[1], items[2], items[4]];
-    final aboutIndex = showOurAppsTab ? 4 : 3;
-    final contactIndex = showOurAppsTab ? 5 : 4;
-    final aboutNavIndex = visibleItems.length - 1;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: const Border(top: BorderSide(color: AppColors.border)),
-        boxShadow: [
-          BoxShadow(
-            color: _o(Colors.black, 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          height: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              for (int i = 0; i < visibleItems.length; i++)
-                Expanded(
-                  child: _BottomNavItem(
-                    data: visibleItems[i],
-                    selected: i == aboutNavIndex
-                        ? (index == aboutIndex || index == contactIndex)
-                        : index == i,
-                    onTap: () {
-                      if (i == aboutNavIndex) {
-                        _openAboutMenu(
-                          context,
-                          aboutIndex: aboutIndex,
-                          contactIndex: contactIndex,
-                        );
-                        return;
-                      }
-                      onTap(i);
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openAboutMenu(
-    BuildContext context, {
-    required int aboutIndex,
-    required int contactIndex,
-  }) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: _o(Colors.black, 0.05)),
-                boxShadow: [
-                  BoxShadow(
-                    color: _o(Colors.black, 0.22),
-                    blurRadius: 18,
-                    spreadRadius: 0.8,
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 56,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: AppColors.textSecondary.withOpacity(0.30),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _BottomNavMenuTile(
-                    title: 'من نحن',
-                    icon: Icons.info_outline_rounded,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      onTap(aboutIndex);
-                    },
-                  ),
-                  Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: AppColors.textSecondary.withOpacity(0.14),
-                  ),
-                  _BottomNavMenuTile(
-                    title: 'الاتصال بنا',
-                    icon: Icons.support_agent_rounded,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      onTap(contactIndex);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _NavItemData {
-  final IconData icon;
-  final IconData selectedIcon;
-  final String label;
-  const _NavItemData(
-      {required this.icon, required this.selectedIcon, required this.label});
-}
-
-class _BottomNavItem extends StatelessWidget {
-  final _NavItemData data;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _BottomNavItem({
-    required this.data,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bgColor = selected ? AppColors.primaryBlue : Colors.transparent;
-    final contentColor = selected ? Colors.white : AppColors.textSecondary;
-
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              selected ? data.selectedIcon : data.icon,
-              size: 22,
-              color: contentColor,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              data.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Tajawal',
-                fontSize: 9,
-                fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                color: contentColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomNavMenuTile extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _BottomNavMenuTile({
     required this.title,
     required this.icon,
-    required this.onTap,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, size: 22, color: AppColors.primaryBlue),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.arrow_back_ios_new_rounded,
-                size: 18,
-                color: AppColors.textSecondary.withOpacity(0.85),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  final int index;
+  final String title;
+  final IconData icon;
 }

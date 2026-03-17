@@ -9,6 +9,7 @@ class FavoritesService {
       ValueNotifier<Set<String>>(<String>{});
 
   static bool _initialized = false;
+  static Future<void> Function(Set<String> favorites)? _syncHandler;
 
   /// ✅ نادِها مرة عند فتح التطبيق
   static Future<void> init() async {
@@ -18,6 +19,20 @@ class FavoritesService {
   }
 
   static String _norm(String s) => s.trim().toUpperCase();
+
+  static void bindSyncHandler(
+    Future<void> Function(Set<String> favorites)? handler,
+  ) {
+    _syncHandler = handler;
+  }
+
+  static Future<void> replaceFavorites(
+    Iterable<String> symbols, {
+    bool syncRemote = true,
+  }) async {
+    final next = symbols.map(_norm).where((e) => e.isNotEmpty).toSet();
+    await _commit(next, syncRemote: syncRemote);
+  }
 
   static Future<List<String>> getFavorites({bool forceReload = false}) async {
     // لو عندنا قيمة في الذاكرة ومش طالب إعادة تحميل
@@ -58,10 +73,7 @@ class FavoritesService {
     if (current.contains(s)) return;
 
     final next = <String>{...current, s};
-    favoritesNotifier.value = next; // ✅ تحديث UI فورًا
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_key, next.toList()..sort());
+    await _commit(next);
   }
 
   static Future<void> removeFavorite(String symbol) async {
@@ -74,10 +86,7 @@ class FavoritesService {
     if (!current.contains(s)) return;
 
     final next = <String>{...current}..remove(s);
-    favoritesNotifier.value = next; // ✅ تحديث UI فورًا
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_key, next.toList()..sort());
+    await _commit(next);
   }
 
   static Future<void> toggleFavorite(String symbol) async {
@@ -95,15 +104,23 @@ class FavoritesService {
       next.add(s);
     }
 
-    favoritesNotifier.value = next; // ✅ تحديث UI فورًا
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_key, next.toList()..sort());
+    await _commit(next);
   }
 
   static Future<void> clearAll() async {
-    favoritesNotifier.value = <String>{};
+    await _commit(<String>{});
+  }
+
+  static Future<void> _commit(
+    Set<String> next, {
+    bool syncRemote = true,
+  }) async {
+    favoritesNotifier.value = next;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
+    await prefs.setStringList(_key, next.toList()..sort());
+
+    if (syncRemote && _syncHandler != null) {
+      await _syncHandler!(next);
+    }
   }
 }

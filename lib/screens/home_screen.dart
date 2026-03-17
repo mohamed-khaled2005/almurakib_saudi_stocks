@@ -8,14 +8,12 @@ import '../core/services/stock_service.dart';
 import '../core/services/favorites_service.dart';
 import '../core/services/translation_service.dart';
 import '../core/utils/constants.dart';
-import '../core/utils/server_time_utils.dart';
 
 import '../animations/fade_animation.dart';
 import '../animations/slide_animation.dart';
+import '../widgets/stock_list_item.dart';
 import '../widgets/tasi_card.dart';
 import '../widgets/top_stock_card.dart';
-import '../widgets/stock_list_item.dart';
-import '../widgets/last_update_banner.dart';
 import 'stock_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -195,16 +193,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  DateTime? _latestUpdateUtc() {
-    final favoriteUpdates = _favoriteStocks.map((s) => s.lastUpdateUtc);
-    return ServerTimeUtils.pickLatest([
-      _tasiIndex?.updateTimeUtc,
-      _topGainer?.lastUpdateUtc,
-      _topLoser?.lastUpdateUtc,
-      ...favoriteUpdates,
-    ]);
-  }
-
   @override
   Widget build(BuildContext context) {
     String currentDate =
@@ -238,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 16),
                         children: [
-                          _buildHeader(currentDate, _latestUpdateUtc()),
+                          _buildHeader(currentDate),
                           const SizedBox(height: 24),
                           if (!_translationsAvailable) _buildTranslationAlert(),
                           if (_tasiIndex != null)
@@ -351,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHeader(String date, DateTime? lastUpdateUtc) {
+  Widget _buildHeader(String date) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -362,11 +350,6 @@ class _HomeScreenState extends State<HomeScreen> {
             fontWeight: FontWeight.w700,
             fontSize: 14,
           ),
-        ),
-        const SizedBox(height: 10),
-        LastUpdateBanner(
-          updateUtc: lastUpdateUtc,
-          loading: _loading,
         ),
       ],
     );

@@ -20,13 +20,13 @@ class LastUpdateBanner extends StatelessWidget {
     final value = ServerTimeUtils.formatLastUpdate(updateUtc);
 
     return Container(
-      height: 38,
+      height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.cardLight.withOpacity(0.45),
+        color: AppColors.cardLight.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: AppColors.primaryBlue.withOpacity(0.14),
+          color: AppColors.primaryBlue.withValues(alpha: 0.14),
         ),
       ),
       child: Row(
