@@ -1,4 +1,3 @@
-﻿import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,11 +18,14 @@ import '../widgets/manual_ad_banner.dart';
 import 'about_screen.dart';
 import 'account_screen.dart';
 import 'all_stocks_screen.dart';
+import 'auth_screen.dart';
 import 'contact_screen.dart';
 import 'educational_content_screen.dart';
+import 'favorites_screen.dart';
 import 'home_screen.dart';
 import 'market_today_screen.dart';
 import 'our_apps_screen.dart';
+import 'profile_completion_screen.dart';
 import 'stock_detail_screen.dart';
 
 const Color _headerSurfaceTop = Color(0xFFF9FFF8);
@@ -42,13 +44,16 @@ class _AppShellScreenState extends State<AppShellScreen> {
   static const int _homeTabIndex = 0;
   static const int _marketTodayTabIndex = 1;
   static const int _allStocksTabIndex = 2;
-  static const int _educationTabIndex = 3;
+  static const int _favoritesTabIndex = 3;
+  static const int _educationTabIndex = 4;
+  int get _accountTabIndex => _showOurAppsTab ? 8 : 7;
 
   int _index = _homeTabIndex;
   bool _refreshing = false;
+  bool _profileCompletionPromptActive = false;
   late final List<Widget> _pages;
   List<StockModel>? _quickSearchStocksCache;
-  bool get _showOurAppsTab => defaultTargetPlatform != TargetPlatform.iOS;
+  bool get _showOurAppsTab => true;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   final GlobalKey _refreshHintKey = GlobalKey();
@@ -65,10 +70,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
       HomeScreen(onNavigateToTab: (index) => _setIndex(index)),
       const MarketTodayScreen(),
       const AllStocksScreen(),
+      const FavoritesScreen(),
       const EducationalContentScreen(),
       if (_showOurAppsTab) const OurAppsScreen(),
       const AboutScreen(),
       const ContactScreen(),
+      const AccountScreen(),
     ];
 
     FavoritesService.init();
@@ -218,10 +225,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
     if (!mounted) return;
     await context.read<AppManagerProvider>().trackPageView('account_entry');
     if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AccountScreen()),
-    );
+    _setIndex(_accountTabIndex);
   }
 
   Future<void> _onLogoTap() async {
@@ -277,8 +281,67 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
   void _setIndex(int i) {
     if (_index == i) return;
-    setState(() => _index = i);
-    context.read<AppManagerProvider>().trackPageView(_pageTrackingName(i));
+    if (_isProtectedIndex(i)) {
+      _openProtectedIndex(i);
+      return;
+    }
+    _applyIndex(i);
+  }
+
+  bool _isProtectedIndex(int index) {
+    return index == _marketTodayTabIndex ||
+        index == _favoritesTabIndex ||
+        index == _educationTabIndex;
+  }
+
+  Future<bool> _ensureAuthenticatedForProtectedContent() async {
+    final manager = context.read<AppManagerProvider>();
+    if (manager.isAuthenticated) return true;
+
+    final allowed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute<bool>(builder: (_) => const AuthScreen()),
+    );
+
+    if (!mounted) return false;
+    return allowed == true &&
+        context.read<AppManagerProvider>().isAuthenticated;
+  }
+
+  Future<void> _openProtectedIndex(int index) async {
+    final allowed = await _ensureAuthenticatedForProtectedContent();
+    if (!mounted || !allowed || _index == index) return;
+    _applyIndex(index);
+  }
+
+  void _applyIndex(int index) {
+    setState(() => _index = index);
+    context.read<AppManagerProvider>().trackPageView(_pageTrackingName(index));
+  }
+
+  void _scheduleMandatoryProfileCompletion(AppManagerProvider manager) {
+    if (_profileCompletionPromptActive || !manager.requiresProfileCompletion) {
+      return;
+    }
+
+    _profileCompletionPromptActive = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route != null && !route.isCurrent) {
+        _profileCompletionPromptActive = false;
+        return;
+      }
+
+      final completed = await ProfileCompletionScreen.ensureCompleted(context);
+      if (!mounted) return;
+
+      _profileCompletionPromptActive = false;
+      final refreshedManager = context.read<AppManagerProvider>();
+      if (!completed && refreshedManager.requiresProfileCompletion) {
+        _scheduleMandatoryProfileCompletion(refreshedManager);
+      }
+    });
   }
 
   String _pageTrackingName(int index) {
@@ -290,14 +353,18 @@ class _AppShellScreenState extends State<AppShellScreen> {
           return 'market_today';
         case _allStocksTabIndex:
           return 'all_stocks';
+        case _favoritesTabIndex:
+          return 'favorites';
         case _educationTabIndex:
           return 'education_content';
-        case 4:
-          return 'our_apps';
         case 5:
-          return 'about';
+          return 'our_apps';
         case 6:
+          return 'about';
+        case 7:
           return 'contact';
+        case 8:
+          return 'account';
         default:
           return 'unknown';
       }
@@ -310,12 +377,16 @@ class _AppShellScreenState extends State<AppShellScreen> {
         return 'market_today';
       case _allStocksTabIndex:
         return 'all_stocks';
+      case _favoritesTabIndex:
+        return 'favorites';
       case _educationTabIndex:
         return 'education_content';
-      case 4:
-        return 'about';
       case 5:
+        return 'about';
+      case 6:
         return 'contact';
+      case 7:
+        return 'account';
       default:
         return 'unknown';
     }
@@ -324,10 +395,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
   DateTime? _headerLastUpdateUtc() {
     final stocks = _quickSearchStocksCache;
     if (stocks == null || stocks.isEmpty) return null;
-    return ServerTimeUtils.pickLatest(stocks.map((stock) => stock.lastUpdateUtc));
+    return ServerTimeUtils.pickLatest(
+        stocks.map((stock) => stock.lastUpdateUtc));
   }
 
-  bool _showTopUtilityBar() => _index <= _allStocksTabIndex;
+  bool _showTopUtilityBar() =>
+      _index <= _favoritesTabIndex || _index == _accountTabIndex;
 
   void _openRightMenu() {
     _scaffoldKey.currentState?.openDrawer();
@@ -447,38 +520,45 @@ class _AppShellScreenState extends State<AppShellScreen> {
     return <_SideNavItem>[
       const _SideNavItem(
         index: _homeTabIndex,
-        title: 'الصفحة الرئيسية',
+        title:
+            '\u0627\u0644\u0635\u0641\u062d\u0629 \u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629',
         icon: Icons.home_outlined,
       ),
       const _SideNavItem(
         index: _marketTodayTabIndex,
-        title: 'السوق اليوم',
+        title: '\u0627\u0644\u0633\u0648\u0642 \u0627\u0644\u064a\u0648\u0645',
         icon: Icons.trending_up_outlined,
       ),
       const _SideNavItem(
         index: _allStocksTabIndex,
-        title: 'جميع الأسهم',
+        title: '\u062c\u0645\u064a\u0639 \u0627\u0644\u0623\u0633\u0647\u0645',
         icon: Icons.list_alt_outlined,
       ),
       const _SideNavItem(
+        index: _favoritesTabIndex,
+        title: '\u0627\u0644\u0645\u0641\u0636\u0644\u0629',
+        icon: Icons.star_border_rounded,
+      ),
+      const _SideNavItem(
         index: _educationTabIndex,
-        title: 'المحتوى التعليمي',
+        title:
+            '\u0627\u0644\u0645\u062d\u062a\u0648\u0649 \u0627\u0644\u062a\u0639\u0644\u064a\u0645\u064a',
         icon: Icons.menu_book_outlined,
       ),
       if (_showOurAppsTab)
         const _SideNavItem(
-          index: 4,
-          title: 'تطبيقاتنا',
+          index: 5,
+          title: '\u062a\u0637\u0628\u064a\u0642\u0627\u062a\u0646\u0627',
           icon: Icons.apps_outlined,
         ),
       _SideNavItem(
-        index: _showOurAppsTab ? 5 : 4,
-        title: 'عن التطبيق',
+        index: _showOurAppsTab ? 6 : 5,
+        title: '\u0639\u0646 \u0627\u0644\u062a\u0637\u0628\u064a\u0642',
         icon: Icons.info_outline_rounded,
       ),
       _SideNavItem(
-        index: _showOurAppsTab ? 6 : 5,
-        title: 'الاتصال بنا',
+        index: _showOurAppsTab ? 7 : 6,
+        title: '\u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0646\u0627',
         icon: Icons.contact_page_outlined,
       ),
     ];
@@ -493,12 +573,19 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final requiresProfileCompletion = context.select<AppManagerProvider, bool>(
+      (manager) => manager.initialized && manager.requiresProfileCompletion,
+    );
     final isAuthenticated = context.select<AppManagerProvider, bool>(
       (manager) => manager.isAuthenticated,
     );
     final activeAd = context.select<AppManagerProvider, ManualAdModel?>(
       (manager) => manager.activeAd,
     );
+
+    if (requiresProfileCompletion) {
+      _scheduleMandatoryProfileCompletion(context.read<AppManagerProvider>());
+    }
 
     return Scaffold(
       key: _scaffoldKey,
@@ -581,9 +668,11 @@ class _AppShellScreenState extends State<AppShellScreen> {
               _HeaderIconButton(
                 tooltip: isAuthenticated ? 'حسابي' : 'تسجيل الدخول',
                 onTap: _openAccount,
-                icon: isAuthenticated
-                    ? Icons.person_outline_rounded
-                    : Icons.account_circle_outlined,
+                icon: _index == _accountTabIndex
+                    ? Icons.account_circle_rounded
+                    : isAuthenticated
+                        ? Icons.person_outline_rounded
+                        : Icons.account_circle_outlined,
               ),
               if (showMenuButton) ...[
                 const SizedBox(width: 10),
@@ -624,6 +713,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
               child: LastUpdateBanner(
                 updateUtc: _headerLastUpdateUtc(),
                 loading: _refreshing || _quickSearchStocksCache == null,
+                showTimeZone: false,
               ),
             ),
             const SizedBox(width: 8),
@@ -929,7 +1019,8 @@ class _QuickSearchBottomSheetState extends State<_QuickSearchBottomSheet> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF4F6F9),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.06)),
                     ),
                     child: TextField(
                       controller: _controller,
@@ -1063,7 +1154,8 @@ class _QuickSearchResults extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFD),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+                  border:
+                      Border.all(color: Colors.black.withValues(alpha: 0.05)),
                 ),
                 child: Row(
                   children: [

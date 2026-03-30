@@ -62,10 +62,15 @@ class ServerTimeUtils {
     return m == 0 ? 'GMT$sign$h' : 'GMT$sign$h:${_two(m)}';
   }
 
-  static String formatLastUpdate(DateTime? utc) {
+  static String formatLastUpdate(
+    DateTime? utc, {
+    bool includeTimeZone = true,
+  }) {
     if (utc == null) return '--';
     final local = utc.isUtc ? utc.toLocal() : utc.toLocal();
-    return '${formatLocalDateTime(utc)} (${gmtOffsetLabel(local)})';
+    final formatted = formatLocalDateTime(utc);
+    if (!includeTimeZone) return formatted;
+    return '$formatted (${gmtOffsetLabel(local)})';
   }
 
   static String _two(int n) => n.toString().padLeft(2, '0');

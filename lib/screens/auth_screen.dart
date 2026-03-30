@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../core/utils/constants.dart';
 import '../providers/app_manager_provider.dart';
 import 'app_shell_screen.dart';
+import 'profile_completion_screen.dart';
 
 const Color _stockAccent = AppColors.primaryGold;
 const Color _authTop = Color(0xFFF9FFF8);
@@ -89,6 +90,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _handleSuccess() async {
     if (!mounted) return;
+    final completed = await ProfileCompletionScreen.ensureCompleted(context);
+    if (!mounted || !completed) return;
     if (widget.redirectToHomeOnSuccess) {
       Navigator.pushAndRemoveUntil(
         context,

@@ -7,17 +7,22 @@ class LastUpdateBanner extends StatelessWidget {
   final DateTime? updateUtc;
   final bool loading;
   final String title;
+  final bool showTimeZone;
 
   const LastUpdateBanner({
     super.key,
     required this.updateUtc,
     this.loading = false,
+    this.showTimeZone = true,
     this.title = 'آخر تحديث:',
   });
 
   @override
   Widget build(BuildContext context) {
-    final value = ServerTimeUtils.formatLastUpdate(updateUtc);
+    final value = ServerTimeUtils.formatLastUpdate(
+      updateUtc,
+      includeTimeZone: showTimeZone,
+    );
 
     return Container(
       height: 40,

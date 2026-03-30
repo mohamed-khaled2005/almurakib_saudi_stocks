@@ -51,6 +51,8 @@ class AppManagerProvider with ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated =>
       _token != null && _token!.isNotEmpty && _user != null;
+  bool get requiresProfileCompletion =>
+      isAuthenticated && !(_user?.hasRequiredProfileData ?? false);
   ManagedAppUser? get user => _user;
   String? get token => _token;
   AppPreferencesModel get preferences => _preferences;
@@ -283,6 +285,9 @@ class AppManagerProvider with ChangeNotifier {
 
   Future<bool> updateProfile({
     String? fullName,
+    String? countryCode,
+    String? countryName,
+    String? phoneNumber,
     String? currentPassword,
     String? newPassword,
   }) async {
@@ -293,6 +298,9 @@ class AppManagerProvider with ChangeNotifier {
       final updated = await _api.updateProfile(
         token: _token!,
         fullName: fullName,
+        countryCode: countryCode,
+        countryName: countryName,
+        phoneNumber: phoneNumber,
         currentPassword: currentPassword,
         newPassword: newPassword,
       );
@@ -482,7 +490,8 @@ class AppManagerProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, _token!);
 
-    final localFavorites = await FavoritesService.getFavorites(forceReload: true);
+    final localFavorites =
+        await FavoritesService.getFavorites(forceReload: true);
     await _pullPreferencesFromServer(localWatchedSymbols: localFavorites);
     await _pushPreferencesToServer();
     await startSessionIfNeeded(forceRestart: true);
@@ -506,7 +515,8 @@ class AppManagerProvider with ChangeNotifier {
         ..sort();
 
       _preferences = AppPreferencesModel(
-        selectedCurrency: remote.selectedCurrency ?? _preferences.selectedCurrency,
+        selectedCurrency:
+            remote.selectedCurrency ?? _preferences.selectedCurrency,
         favoriteItems: remote.favoriteItems.isEmpty
             ? _preferences.favoriteItems
             : remote.favoriteItems,
@@ -515,7 +525,8 @@ class AppManagerProvider with ChangeNotifier {
       );
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_prefsKeyFavoriteItems, _preferences.favoriteItems);
+      await prefs.setStringList(
+          _prefsKeyFavoriteItems, _preferences.favoriteItems);
       await FavoritesService.replaceFavorites(
         _preferences.watchedSymbols,
         syncRemote: false,

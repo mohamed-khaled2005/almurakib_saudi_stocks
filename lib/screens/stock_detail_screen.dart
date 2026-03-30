@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../core/api/api_client.dart';
 import '../core/api/api_endpoints.dart';
@@ -12,9 +13,11 @@ import '../core/services/stock_service.dart';
 import '../core/services/favorites_service.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/constants.dart';
+import '../providers/app_manager_provider.dart';
 
 import '../animations/fade_animation.dart';
 import '../animations/slide_animation.dart';
+import 'auth_screen.dart';
 import '../screens/stock_indicators_screen.dart';
 import '../widgets/technical_indicators_widget.dart';
 import '../widgets/stock_performance_tab.dart';
@@ -83,6 +86,7 @@ class _StockDetailScreenState extends State<StockDetailScreen>
   late TabController _tabController;
 
   int? _touchedIndex;
+  bool _accessGranted = false;
 
   /// ✅ قفل سكرول الصفحة + قفل سوايب التبويبات أثناء لمس الشارت
   bool _lockParentGestures = false;
@@ -113,7 +117,36 @@ class _StockDetailScreenState extends State<StockDetailScreen>
     _tabController = TabController(length: 2, vsync: this);
 
     _stock = widget.stock;
+    _checkAccessAndLoad();
+  }
 
+  void _checkAccessAndLoad() {
+    if (context.read<AppManagerProvider>().isAuthenticated) {
+      _accessGranted = true;
+      _loadProtectedContent();
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      final allowed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute<bool>(builder: (_) => const AuthScreen()),
+      );
+
+      if (!mounted) return;
+      if (allowed == true &&
+          context.read<AppManagerProvider>().isAuthenticated) {
+        setState(() => _accessGranted = true);
+        _loadProtectedContent();
+      } else {
+        Navigator.maybePop(context);
+      }
+    });
+  }
+
+  void _loadProtectedContent() {
     _checkFavorite();
     _loadStockFresh();
     _loadIndicators();
@@ -564,6 +597,13 @@ class _StockDetailScreenState extends State<StockDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!_accessGranted) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF8F9FC),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final stock = _safeStock;
     final changeColor = stock.isGain ? AppColors.gain : AppColors.loss;
 
