@@ -53,6 +53,10 @@ class AppManagerProvider with ChangeNotifier {
       _token != null && _token!.isNotEmpty && _user != null;
   bool get requiresProfileCompletion =>
       isAuthenticated && !(_user?.hasRequiredProfileData ?? false);
+  bool get canUseGoogleSignIn =>
+      kIsWeb || defaultTargetPlatform != TargetPlatform.iOS;
+  bool get canUseAppleSignIn =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   ManagedAppUser? get user => _user;
   String? get token => _token;
   AppPreferencesModel get preferences => _preferences;
@@ -173,6 +177,12 @@ class AppManagerProvider with ChangeNotifier {
   }
 
   Future<bool> loginWithGoogle() async {
+    if (!canUseGoogleSignIn) {
+      _errorMessage = 'تسجيل Google غير متاح على iOS.';
+      notifyListeners();
+      return false;
+    }
+
     _setBusy(true);
     _errorMessage = null;
     try {
@@ -212,7 +222,7 @@ class AppManagerProvider with ChangeNotifier {
   }
 
   Future<bool> loginWithApple() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+    if (!canUseAppleSignIn) {
       _errorMessage = 'تسجيل Apple متاح على iOS فقط.';
       notifyListeners();
       return false;

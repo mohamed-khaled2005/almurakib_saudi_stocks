@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -120,7 +119,8 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final manager = context.watch<AppManagerProvider>();
-    final canUseApple = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final canUseGoogle = manager.canUseGoogleSignIn;
+    final canUseApple = manager.canUseAppleSignIn;
 
     return PopScope(
       canPop: !widget.redirectToHomeOnSuccess,
@@ -176,6 +176,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         const SizedBox(height: 16),
                         _buildAuthCard(
                           manager: manager,
+                          canUseGoogle: canUseGoogle,
                           canUseApple: canUseApple,
                         ),
                         const SizedBox(height: 12),
@@ -275,6 +276,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _buildAuthCard({
     required AppManagerProvider manager,
+    required bool canUseGoogle,
     required bool canUseApple,
   }) {
     return Container(
@@ -302,6 +304,7 @@ class _AuthScreenState extends State<AuthScreen> {
             const SizedBox(height: 14),
             _buildSocialButtons(
               busy: manager.isBusy,
+              canUseGoogle: canUseGoogle,
               canUseApple: canUseApple,
             ),
             const SizedBox(height: 14),
@@ -597,18 +600,20 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _buildSocialButtons({
     required bool busy,
+    required bool canUseGoogle,
     required bool canUseApple,
   }) {
     return Column(
       children: [
-        _socialButton(
-          label: 'المتابعة عبر Google',
-          icon: Icons.g_mobiledata_rounded,
-          brandColor: const Color(0xFF8AB4F8),
-          onTap: busy ? null : _loginWithGoogle,
-        ),
+        if (canUseGoogle)
+          _socialButton(
+            label: 'المتابعة عبر Google',
+            icon: Icons.g_mobiledata_rounded,
+            brandColor: const Color(0xFF8AB4F8),
+            onTap: busy ? null : _loginWithGoogle,
+          ),
         if (canUseApple) ...[
-          const SizedBox(height: 8),
+          if (canUseGoogle) const SizedBox(height: 8),
           _socialButton(
             label: 'المتابعة عبر Apple',
             icon: Icons.apple,
