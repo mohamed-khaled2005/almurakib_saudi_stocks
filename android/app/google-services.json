@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "809992298112-8bdsc3jk6bscegp9f2fpqfalvn8fmvrs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.almurakib.saudiappstocks",
+            "certificate_hash": "7981d05700416724e076523da406c59fd6f7a00e"
+          }
+        },
+        {
           "client_id": "809992298112-h5klovp08llhr7leii4sk0udh71nnep6.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
