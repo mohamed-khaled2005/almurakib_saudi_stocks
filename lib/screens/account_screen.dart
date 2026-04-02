@@ -115,7 +115,7 @@ class _AccountScreenState extends State<AccountScreen> {
   String? _validatePhone(String value) {
     final input = value.trim();
     if (input.isEmpty) {
-      return 'أدخل رقم الهاتف.';
+      return null;
     }
 
     final normalized = input.replaceAll(RegExp(r'[\s\-\(\)]'), '');
@@ -157,6 +157,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final user = manager.user;
     final country = _selectedCountry();
     final phone = _phoneController.text.trim();
+    final phoneNumber = phone.isEmpty ? null : phone;
     final phoneError = _validatePhone(phone);
     final canChangePassword = user?.hasPassword == true;
 
@@ -178,7 +179,7 @@ class _AccountScreenState extends State<AccountScreen> {
       fullName: _nameController.text.trim(),
       countryCode: country.code,
       countryName: country.name,
-      phoneNumber: phone,
+      phoneNumber: phoneNumber,
       currentPassword:
           canChangePassword && _currentPasswordController.text.trim().isNotEmpty
               ? _currentPasswordController.text.trim()
@@ -722,7 +723,7 @@ class _AccountScreenState extends State<AccountScreen> {
           const SizedBox(height: 10),
           _labeledInputField(
             controller: _phoneController,
-            label: 'رقم الهاتف',
+            label: 'رقم الهاتف (اختياري)',
             keyboardType: TextInputType.phone,
           ),
           if (user.hasPassword) ...<Widget>[

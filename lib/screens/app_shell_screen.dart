@@ -320,7 +320,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
   }
 
   void _scheduleMandatoryProfileCompletion(AppManagerProvider manager) {
-    if (_profileCompletionPromptActive || !manager.requiresProfileCompletion) {
+    if (_profileCompletionPromptActive ||
+        !manager.shouldPromptProfileCompletion) {
       return;
     }
 
@@ -338,7 +339,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
       _profileCompletionPromptActive = false;
       final refreshedManager = context.read<AppManagerProvider>();
-      if (!completed && refreshedManager.requiresProfileCompletion) {
+      if (!completed && refreshedManager.shouldPromptProfileCompletion) {
         _scheduleMandatoryProfileCompletion(refreshedManager);
       }
     });
@@ -574,7 +575,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
   @override
   Widget build(BuildContext context) {
     final requiresProfileCompletion = context.select<AppManagerProvider, bool>(
-      (manager) => manager.initialized && manager.requiresProfileCompletion,
+      (manager) => manager.initialized && manager.shouldPromptProfileCompletion,
     );
     final isAuthenticated = context.select<AppManagerProvider, bool>(
       (manager) => manager.isAuthenticated,

@@ -28,6 +28,8 @@ class AppManagerProvider with ChangeNotifier {
   static const String _tokenKey = 'app_manager_token';
   static const String _deviceIdKey = 'app_manager_device_id';
   static const String _prefsKeyFavoriteItems = 'app_manager_favorite_items';
+  static const String _prefsKeyProfileCompletionSkipped =
+      'app_manager_profile_completion_skipped';
 
   bool _initialized = false;
   bool _isBusy = false;
@@ -45,6 +47,7 @@ class AppManagerProvider with ChangeNotifier {
 
   String? _activeSessionUid;
   int _pagesViewedInSession = 0;
+  bool _profileCompletionSkipped = false;
 
   bool get initialized => _initialized;
   bool get isBusy => _isBusy;
@@ -53,6 +56,8 @@ class AppManagerProvider with ChangeNotifier {
       _token != null && _token!.isNotEmpty && _user != null;
   bool get requiresProfileCompletion =>
       isAuthenticated && !(_user?.hasRequiredProfileData ?? false);
+  bool get shouldPromptProfileCompletion =>
+      requiresProfileCompletion && !_profileCompletionSkipped;
   bool get canUseGoogleSignIn =>
       kIsWeb || defaultTargetPlatform != TargetPlatform.iOS;
   bool get canUseAppleSignIn =>
@@ -83,6 +88,8 @@ class AppManagerProvider with ChangeNotifier {
 
       _token = prefs.getString(_tokenKey);
       _deviceId = prefs.getString(_deviceIdKey);
+      _profileCompletionSkipped =
+          prefs.getBool(_prefsKeyProfileCompletionSkipped) ?? false;
       if (_deviceId == null || _deviceId!.isEmpty) {
         _deviceId = _generateDeviceId();
         await prefs.setString(_deviceIdKey, _deviceId!);
@@ -103,6 +110,9 @@ class AppManagerProvider with ChangeNotifier {
       if (_token != null && _token!.isNotEmpty) {
         try {
           _user = await _api.me(_token!);
+          if (_user?.hasRequiredProfileData ?? false) {
+            await _setProfileCompletionSkipped(false, prefs: prefs);
+          }
           await _pullPreferencesFromServer(localWatchedSymbols: localFavorites);
           await syncPushToken();
         } catch (_) {
@@ -315,6 +325,10 @@ class AppManagerProvider with ChangeNotifier {
         newPassword: newPassword,
       );
       _user = updated;
+      if (updated.hasRequiredProfileData) {
+        final prefs = await SharedPreferences.getInstance();
+        await _setProfileCompletionSkipped(false, prefs: prefs);
+      }
       notifyListeners();
       return true;
     } catch (e) {
@@ -423,6 +437,13 @@ class AppManagerProvider with ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> skipProfileCompletionPrompt() async {
+    if (_profileCompletionSkipped) return;
+    final prefs = await SharedPreferences.getInstance();
+    await _setProfileCompletionSkipped(true, prefs: prefs);
+    notifyListeners();
+  }
+
   Future<void> startSessionIfNeeded({bool forceRestart = false}) async {
     if (_activeSessionUid != null && !forceRestart) return;
 
@@ -499,6 +520,7 @@ class AppManagerProvider with ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, _token!);
+    await _setProfileCompletionSkipped(false, prefs: prefs);
 
     final localFavorites =
         await FavoritesService.getFavorites(forceReload: true);
@@ -584,6 +606,19 @@ class AppManagerProvider with ChangeNotifier {
     _token = null;
     _user = null;
     await prefs.remove(_tokenKey);
+    await _setProfileCompletionSkipped(false, prefs: prefs);
+  }
+
+  Future<void> _setProfileCompletionSkipped(
+    bool value, {
+    required SharedPreferences prefs,
+  }) async {
+    _profileCompletionSkipped = value;
+    if (value) {
+      await prefs.setBool(_prefsKeyProfileCompletionSkipped, true);
+    } else {
+      await prefs.remove(_prefsKeyProfileCompletionSkipped);
+    }
   }
 
   void _setBusy(bool value) {

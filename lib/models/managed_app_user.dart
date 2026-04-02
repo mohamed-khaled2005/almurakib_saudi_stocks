@@ -39,8 +39,8 @@ class ManagedAppUser {
   }
 
   bool get hasRequiredProfileData {
+    final code = (countryCode ?? '').trim();
     final country = (countryName ?? '').trim();
-    final phone = (phoneNumber ?? '').trim();
-    return country.isNotEmpty && phone.isNotEmpty;
+    return code.isNotEmpty || country.isNotEmpty;
   }
 }
